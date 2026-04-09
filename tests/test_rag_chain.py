@@ -1,0 +1,77 @@
+from unittest.mock import patch, MagicMock
+import pytest
+
+
+class TestSearchRelevantDocuments:
+    def test_returns_context_and_sources(self):
+        with (
+            patch("lib.rag_chain.OpenAIEmbeddings") as MockEmbed,
+            patch("lib.rag_chain.get_supabase_admin") as mock_admin,
+        ):
+            MockEmbed.return_value.embed_query.return_value = [0.1] * 1536
+            mock_rpc = MagicMock()
+            mock_rpc.execute.return_value.data = [
+                {
+                    "id": 1,
+                    "content": "RAGとは検索拡張生成のことです。",
+                    "metadata": {"source": "test.md"},
+                    "similarity": 0.9,
+                },
+            ]
+            mock_admin.return_value.rpc.return_value = mock_rpc
+
+            from lib.rag_chain import search_relevant_documents
+
+            result = search_relevant_documents("RAGとは？")
+
+            assert "context" in result
+            assert "sources" in result
+            assert "RAGとは検索拡張生成のことです。" in result["context"]
+            assert len(result["sources"]) == 1
+
+    def test_returns_empty_when_no_matches(self):
+        with (
+            patch("lib.rag_chain.OpenAIEmbeddings") as MockEmbed,
+            patch("lib.rag_chain.get_supabase_admin") as mock_admin,
+        ):
+            MockEmbed.return_value.embed_query.return_value = [0.1] * 1536
+            mock_rpc = MagicMock()
+            mock_rpc.execute.return_value.data = []
+            mock_admin.return_value.rpc.return_value = mock_rpc
+
+            from lib.rag_chain import search_relevant_documents
+
+            result = search_relevant_documents("今日の天気は？")
+            assert result["context"] == ""
+            assert result["sources"] == []
+
+
+class TestBuildRagPrompt:
+    def test_includes_context_and_question(self):
+        from lib.rag_chain import build_rag_prompt
+
+        messages = build_rag_prompt(
+            question="RAGとは？",
+            context="RAGとは検索拡張生成のことです。",
+        )
+        assert len(messages) == 2
+        system_msg = messages[0]
+        assert system_msg["role"] == "system"
+        assert "RAGとは検索拡張生成のことです。" in system_msg["content"]
+        user_msg = messages[1]
+        assert user_msg["role"] == "user"
+        assert "RAGとは？" in user_msg["content"]
+
+    def test_system_prompt_includes_fallback_instruction(self):
+        from lib.rag_chain import build_rag_prompt
+
+        messages = build_rag_prompt(question="test", context="some context")
+        assert "ナレッジベースに含まれていません" in messages[0]["content"]
+
+
+class TestRagSystemPrompt:
+    def test_prompt_template_exists(self):
+        from lib.rag_chain import RAG_SYSTEM_PROMPT
+
+        assert "コンテキスト" in RAG_SYSTEM_PROMPT
+        assert "{context}" in RAG_SYSTEM_PROMPT

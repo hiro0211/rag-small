@@ -1,0 +1,41 @@
+[project]
+name = "rag-small"
+version = "0.1.0"
+description = "RAG Small - 社内RAGシステムのスモール版再現"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "streamlit>=1.45.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langchain-community>=0.3.0",
+    "supabase>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "pypdf>=5.0.0",
+    "ragas>=0.4.3",
+    "datasets>=4.8.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
+    "pytest-asyncio>=0.25.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["lib"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+fail_under = 80
+exclude_lines = [
+    "if __name__",
+    "def main",
+    "pragma: no cover",
+]
