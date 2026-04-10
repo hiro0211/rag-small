@@ -13,6 +13,7 @@ from lib.chat_history import (
     save_message,
     update_session_title,
 )
+from lib.llm import get_available_models, DEFAULT_MODEL
 
 st.set_page_config(
     page_title="RAG Small",
@@ -25,6 +26,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "current_session_id" not in st.session_state:
     st.session_state.current_session_id = None
+if "selected_model" not in st.session_state:
+    st.session_state.selected_model = DEFAULT_MODEL
 
 # --- Sidebar: Session Management ---
 with st.sidebar:
@@ -50,6 +53,25 @@ with st.sidebar:
 st.title("RAG Small")
 st.caption("社内ナレッジに基づいて質問に回答するアシスタント")
 
+# Model selector (ChatGPT/Gemini-style dropdown near the top of the chat area)
+available_models = get_available_models()
+model_display_names = list(available_models.keys())
+current_index = next(
+    (
+        i
+        for i, name in enumerate(model_display_names)
+        if available_models[name] == st.session_state.selected_model
+    ),
+    0,
+)
+selected_display = st.selectbox(
+    "モデル",
+    options=model_display_names,
+    index=current_index,
+    label_visibility="collapsed",
+)
+st.session_state.selected_model = available_models[selected_display]
+
 # Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -74,7 +96,9 @@ if prompt := st.chat_input("質問を入力してください"):
     # Generate and stream response with conversation history
     with st.chat_message("assistant"):
         history = st.session_state.messages[:-1]
-        token_gen, sources = generate_response_with_sources(prompt, history)
+        token_gen, sources = generate_response_with_sources(
+            prompt, history, model_id=st.session_state.selected_model
+        )
         response = st.write_stream(token_gen)
 
     # Show sources in expander

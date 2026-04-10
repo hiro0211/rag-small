@@ -14,7 +14,7 @@ class TestGenerateResponse:
 
         result = list(generate_response("RAGとは？"))
 
-        mock_stream.assert_called_once_with("RAGとは？", [])
+        mock_stream.assert_called_once_with("RAGとは？", [], model_id="")
         assert result == ["回答", "テスト"]
 
     @patch("lib.chat.stream_response")
@@ -29,7 +29,7 @@ class TestGenerateResponse:
 
         list(generate_response("新しい質問", history))
 
-        mock_stream.assert_called_once_with("新しい質問", history)
+        mock_stream.assert_called_once_with("新しい質問", history, model_id="")
 
     @patch("lib.chat.stream_response")
     def test_defaults_history_to_empty_list(self, mock_stream):
@@ -39,7 +39,19 @@ class TestGenerateResponse:
 
         list(generate_response("質問"))
 
-        mock_stream.assert_called_once_with("質問", [])
+        mock_stream.assert_called_once_with("質問", [], model_id="")
+
+    @patch("lib.chat.stream_response")
+    def test_forwards_model_id_to_stream_response(self, mock_stream):
+        from lib.chat import generate_response
+
+        mock_stream.return_value = iter([])
+
+        list(generate_response("質問", model_id="gemini-2.5-flash"))
+
+        mock_stream.assert_called_once_with(
+            "質問", [], model_id="gemini-2.5-flash"
+        )
 
     @patch("lib.chat.stream_response")
     def test_yields_tokens_from_stream(self, mock_stream):
@@ -67,3 +79,20 @@ class TestGenerateResponseWithSources:
 
         assert list(token_gen) == ["回答"]
         assert result_sources == sources
+        mock_stream.assert_called_once_with("質問", [], model_id="")
+
+    @patch("lib.chat.stream_response_with_sources")
+    def test_forwards_model_id_to_stream_response_with_sources(self, mock_stream):
+        from lib.chat import generate_response_with_sources
+
+        mock_stream.return_value = (iter([]), [])
+
+        history = [{"role": "user", "content": "hi"}]
+        token_gen, _ = generate_response_with_sources(
+            "質問", history, model_id="gemini-2.5-flash"
+        )
+        list(token_gen)
+
+        mock_stream.assert_called_once_with(
+            "質問", history, model_id="gemini-2.5-flash"
+        )

@@ -47,7 +47,7 @@ class TestSearchRelevantDocuments:
 
 
 class TestDefaultThreshold:
-    def test_default_threshold_is_0_5(self):
+    def test_default_threshold_is_0_3(self):
         with (
             patch("lib.rag_chain.OpenAIEmbeddings") as MockEmbed,
             patch("lib.rag_chain.get_supabase_admin") as mock_admin,
@@ -61,9 +61,8 @@ class TestDefaultThreshold:
 
             search_relevant_documents("テスト")
 
-            call_args = mock_admin.return_value.rpc.call_args[0]
             params = mock_admin.return_value.rpc.call_args[0][1]
-            assert params["match_threshold"] == 0.5
+            assert params["match_threshold"] == 0.3
 
 
 class TestBuildRagPrompt:
@@ -101,10 +100,10 @@ class TestRagSystemPrompt:
 
         assert "引用" in RAG_SYSTEM_PROMPT
 
-    def test_prompt_prohibits_speculation(self):
+    def test_prompt_allows_flexible_interpretation(self):
         from lib.rag_chain import RAG_SYSTEM_PROMPT
 
-        assert "推測" in RAG_SYSTEM_PROMPT
+        assert "表記ゆれ" in RAG_SYSTEM_PROMPT or "柔軟" in RAG_SYSTEM_PROMPT
 
 
 class TestContextSourceLabels:

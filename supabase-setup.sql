@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS documents (
 -- 3. ベクトル類似検索用 RPC 関数
 CREATE OR REPLACE FUNCTION match_documents(
   query_embedding vector(1536),
-  match_threshold float DEFAULT 0.5,
+  match_threshold float DEFAULT 0.3,
   match_count int DEFAULT 5
 )
 RETURNS TABLE (
