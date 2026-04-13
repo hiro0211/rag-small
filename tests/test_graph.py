@@ -372,6 +372,32 @@ class TestGraphTopology:
         assert "rewrite_query" in node_names
 
 
+class TestGetCompiledGraph:
+    """Tests for get_compiled_graph() caching."""
+
+    def test_get_compiled_graph_returns_same_instance(self):
+        from lib.graph import get_compiled_graph
+
+        get_compiled_graph.cache_clear()
+
+        graph1 = get_compiled_graph()
+        graph2 = get_compiled_graph()
+
+        assert graph1 is graph2
+
+    @patch("lib.graph.build_rag_graph")
+    def test_get_compiled_graph_calls_build_once(self, mock_build):
+        from lib.graph import get_compiled_graph
+
+        get_compiled_graph.cache_clear()
+        mock_build.return_value = MagicMock()
+
+        get_compiled_graph()
+        get_compiled_graph()
+
+        mock_build.assert_called_once()
+
+
 class TestStreamResponse:
     """Tests for stream_response()."""
 
@@ -499,22 +525,20 @@ class TestStreamResponse:
         call_args = mock_graph.stream.call_args[0][0]
         assert call_args["model_id"] == ""
 
-    @patch("lib.graph.create_llm")
-    @patch("lib.graph.stream_response")
-    @patch("lib.graph.search_relevant_documents")
-    def test_stream_response_with_sources_returns_sources(
-        self, mock_search, mock_stream, mock_create_llm
-    ):
+    @patch("lib.graph.get_compiled_graph")
+    def test_stream_response_with_sources_returns_sources(self, mock_get_graph):
         from lib.graph import stream_response_with_sources
         from lib.rag_chain import Source
 
-        mock_llm = MagicMock()
-        mock_create_llm.return_value = mock_llm
-        mock_llm.invoke.return_value = AIMessage(content="質問 rewritten")
-
         sources = [Source(content="doc", metadata={"source": "test.md"}, similarity=0.9)]
-        mock_search.return_value = {"context": "ctx", "sources": sources}
-        mock_stream.return_value = iter(["回答"])
+        mock_graph = MagicMock()
+        mock_get_graph.return_value = mock_graph
+
+        # Simulate multimode streaming (version="v2" dict format)
+        mock_graph.stream.return_value = [
+            {"type": "updates", "data": {"retrieve": {"context": "ctx", "sources": sources}}},
+            {"type": "messages", "data": (MagicMock(content="回答"), {"langgraph_node": "generate"})},
+        ]
 
         token_gen, result_sources = stream_response_with_sources("質問", [])
         tokens = list(token_gen)
@@ -522,33 +546,38 @@ class TestStreamResponse:
         assert tokens == ["回答"]
         assert len(result_sources) == 1
         assert result_sources[0].similarity == 0.9
-        mock_search.assert_called_once_with("質問 rewritten")
-        mock_stream.assert_called_once_with("質問", [], model_id="")
 
-    @patch("lib.graph.create_llm")
-    @patch("lib.graph.stream_response")
-    @patch("lib.graph.search_relevant_documents")
-    def test_stream_response_with_sources_forwards_model_id(
-        self, mock_search, mock_stream, mock_create_llm
-    ):
+    @patch("lib.graph.get_compiled_graph")
+    def test_stream_response_with_sources_forwards_model_id(self, mock_get_graph):
         from lib.graph import stream_response_with_sources
 
-        mock_llm = MagicMock()
-        mock_create_llm.return_value = mock_llm
-        mock_llm.invoke.return_value = AIMessage(content="rewritten")
-
-        mock_search.return_value = {"context": "ctx", "sources": []}
-        mock_stream.return_value = iter([])
+        mock_graph = MagicMock()
+        mock_get_graph.return_value = mock_graph
+        mock_graph.stream.return_value = []
 
         token_gen, _ = stream_response_with_sources(
             "質問", [], model_id="gemini-2.5-flash"
         )
         list(token_gen)
 
-        mock_create_llm.assert_called_once_with("gemini-2.5-flash")
-        mock_stream.assert_called_once_with(
-            "質問", [], model_id="gemini-2.5-flash"
-        )
+        call_args = mock_graph.stream.call_args[0][0]
+        assert call_args["model_id"] == "gemini-2.5-flash"
+
+    @patch("lib.graph.get_compiled_graph")
+    def test_stream_response_with_sources_no_duplicate_search(self, mock_get_graph):
+        """Verify search_relevant_documents is NOT called outside the graph."""
+        from lib.graph import stream_response_with_sources
+
+        mock_graph = MagicMock()
+        mock_get_graph.return_value = mock_graph
+        mock_graph.stream.return_value = [
+            {"type": "updates", "data": {"retrieve": {"context": "ctx", "sources": []}}},
+        ]
+
+        with patch("lib.graph.search_relevant_documents") as mock_search:
+            token_gen, _ = stream_response_with_sources("質問", [])
+            list(token_gen)
+            mock_search.assert_not_called()
 
     @patch("lib.graph.build_rag_graph")
     def test_skips_empty_content_chunks(self, mock_build):

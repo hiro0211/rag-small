@@ -9,3 +9,16 @@ def set_env_vars(monkeypatch):
     monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
     monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "test-publishable-key")
     monkeypatch.setenv("SUPABASE_SECRET_KEY", "test-secret-key")
+
+
+@pytest.fixture(autouse=True)
+def clear_lru_caches():
+    """Clear all lru_cache instances between tests."""
+    yield
+    from lib.llm import create_llm
+    from lib.graph import get_compiled_graph
+    from lib.rag_chain import _get_embeddings
+
+    create_llm.cache_clear()
+    get_compiled_graph.cache_clear()
+    _get_embeddings.cache_clear()

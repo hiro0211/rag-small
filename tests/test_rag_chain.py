@@ -81,11 +81,13 @@ class TestBuildRagPrompt:
         assert user_msg["role"] == "user"
         assert "RAGとは？" in user_msg["content"]
 
-    def test_system_prompt_includes_fallback_instruction(self):
+    def test_system_prompt_includes_knowledge_source_markers(self):
         from lib.rag_chain import build_rag_prompt
 
         messages = build_rag_prompt(question="test", context="some context")
-        assert "ナレッジベースに含まれていません" in messages[0]["content"]
+        system_content = messages[0]["content"]
+        assert "【ナレッジベース】" in system_content
+        assert "【一般知識】" in system_content
 
 
 class TestRagSystemPrompt:
@@ -104,6 +106,21 @@ class TestRagSystemPrompt:
         from lib.rag_chain import RAG_SYSTEM_PROMPT
 
         assert "表記ゆれ" in RAG_SYSTEM_PROMPT or "柔軟" in RAG_SYSTEM_PROMPT
+
+    def test_prompt_includes_priority_based_answering(self):
+        from lib.rag_chain import RAG_SYSTEM_PROMPT
+
+        assert "回答の優先順位" in RAG_SYSTEM_PROMPT
+
+    def test_prompt_supports_general_knowledge_fallback(self):
+        from lib.rag_chain import RAG_SYSTEM_PROMPT
+
+        assert "一般知識" in RAG_SYSTEM_PROMPT
+
+    def test_prompt_does_not_reject_unknown_questions(self):
+        from lib.rag_chain import RAG_SYSTEM_PROMPT
+
+        assert "この情報はナレッジベースに含まれていません" not in RAG_SYSTEM_PROMPT
 
 
 class TestContextSourceLabels:
@@ -136,3 +153,21 @@ class TestContextSourceLabels:
 
             assert "[出典1:" in result["context"]
             assert "[出典2:" in result["context"]
+
+
+class TestEmbeddingsCache:
+    """Tests for _get_embeddings() caching."""
+
+    def test_embeddings_client_cached(self):
+        from lib.rag_chain import _get_embeddings
+
+        _get_embeddings.cache_clear()
+
+        with patch("lib.rag_chain.OpenAIEmbeddings") as MockEmbed:
+            MockEmbed.return_value = MagicMock()
+
+            result1 = _get_embeddings()
+            result2 = _get_embeddings()
+
+            assert result1 is result2
+            MockEmbed.assert_called_once()

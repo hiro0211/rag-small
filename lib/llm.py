@@ -1,5 +1,7 @@
 """LLM factory: switch between OpenAI GPT-4o-mini and Google Gemini 2.5 Flash."""
 
+from functools import lru_cache
+
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -13,6 +15,7 @@ AVAILABLE_MODELS: dict[str, str] = {
 }
 
 
+@lru_cache(maxsize=4)
 def create_llm(model_id: str) -> BaseChatModel:
     """Return a chat model instance for the given model id.
 

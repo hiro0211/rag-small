@@ -1,19 +1,26 @@
 """RAG search logic: embed query, search Supabase, build prompt."""
 
 from dataclasses import dataclass
+from functools import lru_cache
+
 from langchain_openai import OpenAIEmbeddings
 from lib.supabase_client import get_supabase_admin
 
 
 RAG_SYSTEM_PROMPT = """あなたは社内ナレッジに基づいて質問に回答するアシスタントです。
-以下のコンテキスト情報を主な根拠に、質問に丁寧に回答してください。
+以下のコンテキスト情報と、あなたの一般知識を組み合わせて、質問に丁寧に回答してください。
+
+## 回答の優先順位:
+1. コンテキストに直接的な回答がある場合 → コンテキストの情報を主な根拠として回答
+2. コンテキストに部分的・関連する情報がある場合 → その範囲で回答し、不足部分は一般知識で補足
+3. コンテキストに関連情報がない場合 → 一般知識で回答
 
 ## ルール:
-- 回答はコンテキストの情報を優先してください
 - コンテキストから引用する場合は「」で囲んでください
 - 質問の表記ゆれ（ひらがな・カタカナ・略語）は柔軟に解釈してください
-- コンテキストに部分的な情報がある場合は、その範囲で答えつつ「詳細はナレッジベースに記載がありません」と補足してください
-- コンテキストに全く関連情報がない場合は、「この情報はナレッジベースに含まれていません」と回答してください
+- コンテキスト情報に基づく回答には【ナレッジベース】と明記してください
+- 一般知識に基づく回答には【一般知識】と明記してください
+- 両方を組み合わせる場合は、どの部分がどちらに基づくか区別してください
 
 # コンテキスト:
 {context}"""
@@ -26,13 +33,19 @@ class Source:
     similarity: float
 
 
+@lru_cache(maxsize=1)
+def _get_embeddings():
+    """Return a cached OpenAIEmbeddings instance."""
+    return OpenAIEmbeddings(model="text-embedding-3-small")
+
+
 def search_relevant_documents(
     question: str,
     match_threshold: float = 0.3,
     match_count: int = 5,
 ) -> dict:
     """Search for relevant documents using vector similarity."""
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    embeddings = _get_embeddings()
     query_embedding = embeddings.embed_query(question)
 
     supabase = get_supabase_admin()

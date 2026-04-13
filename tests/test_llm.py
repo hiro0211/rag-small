@@ -69,6 +69,39 @@ class TestGetAvailableModels:
         assert models["Gemini 2.5 Flash"] == "gemini-2.5-flash"
 
 
+class TestCreateLLMCache:
+    """Tests for create_llm() caching behavior."""
+
+    @patch("lib.llm.ChatOpenAI")
+    def test_create_llm_caches_by_model_id(self, mock_openai_cls):
+        from lib.llm import create_llm
+
+        create_llm.cache_clear()
+        mock_openai_cls.return_value = MagicMock()
+
+        result1 = create_llm("gpt-4o-mini")
+        result2 = create_llm("gpt-4o-mini")
+
+        assert result1 is result2
+        mock_openai_cls.assert_called_once()
+
+    @patch("lib.llm.ChatGoogleGenerativeAI")
+    @patch("lib.llm.ChatOpenAI")
+    def test_create_llm_different_models_not_shared(
+        self, mock_openai_cls, mock_gemini_cls
+    ):
+        from lib.llm import create_llm
+
+        create_llm.cache_clear()
+        mock_openai_cls.return_value = MagicMock()
+        mock_gemini_cls.return_value = MagicMock()
+
+        result_openai = create_llm("gpt-4o-mini")
+        result_gemini = create_llm("gemini-2.5-flash")
+
+        assert result_openai is not result_gemini
+
+
 class TestDefaultModel:
     """Tests for DEFAULT_MODEL constant."""
 

@@ -1,5 +1,6 @@
 """LangGraph RAG pipeline with conversation history support."""
 
+from functools import lru_cache
 from typing import Annotated, Generator
 
 from typing_extensions import TypedDict
@@ -90,6 +91,12 @@ def build_rag_graph():
     return graph.compile()
 
 
+@lru_cache(maxsize=1)
+def get_compiled_graph():
+    """Return a cached compiled RAG graph."""
+    return build_rag_graph()
+
+
 def _build_messages(
     question: str, history: list[dict[str, str]]
 ) -> list[AnyMessage]:
@@ -110,7 +117,7 @@ def stream_response(
     """Stream LLM tokens from the RAG graph for Streamlit consumption."""
     messages = _build_messages(question, history)
 
-    graph = build_rag_graph()
+    graph = get_compiled_graph()
     for chunk in graph.stream(
         {
             "messages": messages,
@@ -131,16 +138,38 @@ def stream_response(
 def stream_response_with_sources(
     question: str, history: list[dict[str, str]], model_id: str = ""
 ) -> tuple[Generator[str, None, None], list]:
-    """Stream LLM tokens and return sources from the RAG graph.
+    """Stream LLM tokens and return sources via single graph execution.
+
+    Uses multimode streaming ["updates", "messages"] to capture sources
+    from the retrieve node and stream tokens from the generate node
+    in a single graph run — no duplicate rewrite or search calls.
 
     Returns (token_generator, sources) tuple.
-    Rewrites the query once to fetch sources immediately for the UI,
-    token streaming is delegated to stream_response (which rewrites again
-    inside the graph — see plan Part 3 note).
+    Sources are populated as the generator is consumed.
     """
-    llm = create_llm(model_id or DEFAULT_MODEL)
-    prompt = REWRITE_PROMPT.format(question=question)
-    rewritten = llm.invoke([HumanMessage(content=prompt)]).content.strip() or question
-    result = search_relevant_documents(rewritten)
-    sources = result["sources"]
-    return stream_response(question, history, model_id=model_id), sources
+    messages = _build_messages(question, history)
+    graph = get_compiled_graph()
+    sources: list = []
+
+    def _generator():
+        for chunk in graph.stream(
+            {
+                "messages": messages,
+                "rewritten_query": "",
+                "context": "",
+                "sources": [],
+                "model_id": model_id,
+            },
+            stream_mode=["updates", "messages"],
+            version="v2",
+        ):
+            if chunk["type"] == "updates":
+                payload = chunk["data"]
+                if "retrieve" in payload and payload["retrieve"].get("sources"):
+                    sources.extend(payload["retrieve"]["sources"])
+            elif chunk["type"] == "messages":
+                msg_chunk, metadata = chunk["data"]
+                if msg_chunk.content and metadata.get("langgraph_node") == "generate":
+                    yield msg_chunk.content
+
+    return _generator(), sources
